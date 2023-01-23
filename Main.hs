@@ -111,5 +111,6 @@ main =
 
           mainConnect host port -- port==Nothing is handled inside of mainConnect.
       Just 3 -> mainServe
-      
+      Just _ -> main
+      Nothing -> main
             
