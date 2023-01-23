@@ -4,6 +4,8 @@ import Fwtp
 import Game
 import Network.Socket
 import UserInterface
+import Text.Read (readMaybe)
+import Control.Monad (when)
 
 handlePacket :: Socket -> FwtpPacket -> IO ()
 handlePacket sock (FwtpHandshakeInitPacket verList) = undefined -- TODO (oder vielleicht auch einfach nicht?)
@@ -15,14 +17,16 @@ gameLoopLocal grid@(Grid height cols) =
   do
     clearScreen
     showGrid grid
-    evalGameStatus grid
+    gameEnded <- evalGameStatus grid
+    when gameEnded main
 
     indicatePlayer Self
     ownTurn <- getTurn width
     let Just ownResult = insertChip grid ownTurn Self -- TODO: Nothing abfangen
     clearScreen
     showGrid ownResult
-    evalGameStatus ownResult
+    gameEnded <- evalGameStatus ownResult
+    when gameEnded main
 
     indicatePlayer Opponent
     oppTurn <- getTurn width
@@ -36,14 +40,16 @@ gameLoopNetwork sock grid@(Grid height cols) =
   do
     clearScreen
     showGrid grid
-    evalGameStatus grid
+    gameEnded <- evalGameStatus grid
+    when gameEnded main
 
     ownTurn <- getTurn width
     sendTurn sock ownTurn
     let Just ownResult = insertChip grid ownTurn Self -- TODO: Nothing abfangen
     clearScreen
     showGrid ownResult
-    evalGameStatus ownResult
+    gameEnded <- evalGameStatus ownResult
+    when gameEnded main
 
     (oppTurn, otherPackets) <- getOpponentTurn sock
     print otherPackets
@@ -81,4 +87,29 @@ mainLocal :: IO ()
 mainLocal = gameLoopLocal defaultGrid
 
 main :: IO ()
-main = mainServe -- TODO: nutzerfreundliche Entscheidung was wir jetzt eigentlich machen wollen
+main =
+  do
+    clearScreen
+    putStrLn welcomeBanner
+    
+    putStr methodMenu
+    choiceRaw <- getLine
+
+    let choice = readMaybe choiceRaw :: Maybe Int
+
+    case choice of
+      Just 1 -> mainLocal
+      Just 2 ->
+        do --TODO maybe make this a bit more resistent to malformed input
+          putStr "Please enter the IPv4 address of the host you want to connect to: "
+          host <- getLine
+
+          putStr ("Please enter the port you want to use [leave empty for " ++ show defaultPortFwtp ++ "]: ")
+          portRaw <- getLine
+
+          let port = readMaybe portRaw :: Maybe PortNumber
+
+          mainConnect host port -- port==Nothing is handled inside of mainConnect.
+      Just 3 -> mainServe
+      
+            

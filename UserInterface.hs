@@ -4,6 +4,22 @@ import Game
 import System.Exit
 import Text.Read (readMaybe)
 
+welcomeBanner =
+  colorEmphasis ++
+  "             - 𝐂𝐎𝐍𝐍𝐄𝐂𝐓 𝐅𝐎𝐔𝐑 -        \n\
+  \        powered by FWTP and Haskell\n\
+  \© Antricks 2023 https://github.com/Antricks\n\n"
+  ++ colorReset
+
+methodMenu =
+  "Choose your method of playing:\n\
+  \  [1] Local game\n\
+  \  [2] Connect to other FWTP instance\n\
+  \  [3] Host a game\n\n\
+  \> "
+
+returnToHome = "Press [Enter] to return to the main menu..."
+
 colorGridBorder = "\ESC[36m"
 
 colorOwn = "\ESC[94m"
@@ -49,7 +65,7 @@ msgVictory = "𝐂𝐎𝐍𝐆𝐑𝐀𝐓𝐒 - 𝐘𝐎𝐔 𝐖𝐎𝐍!     
 msgDefeat = "𝐘𝐎𝐔 𝐋𝐎𝐒𝐓. 𝐁𝐄𝐓𝐓𝐄𝐑 𝐋𝐔𝐂𝐊 𝐍𝐄𝐗𝐓 𝐓𝐈𝐌𝐄!                       "
 
 clearScreen :: IO ()
-clearScreen = return () -- putStr "\ESC[H\ESC[2J"
+clearScreen = putStr "\ESC[H\ESC[2J"
 
 indicatePlayer :: Player -> IO ()
 indicatePlayer Self = putStr (colorOwn ++ "[" ++ symbolChip ++ "] ")
@@ -65,7 +81,10 @@ getTurn width =
     let turn = readMaybe input :: Maybe Int
     case turn of
       Nothing -> getTurn width
-      Just a -> return (a - 1)
+      Just a ->
+        if a >= 1 && a <= width
+          then return (a - 1)
+          else getTurn width
 
 showGrid :: Grid -> IO ()
 showGrid grid@(Grid height cols) =
@@ -73,12 +92,12 @@ showGrid grid@(Grid height cols) =
     putStr colorReset
     print grid -- TODO schöne ausgabe
 
-evalGameStatus :: Grid -> IO ()
+evalGameStatus :: Grid -> IO Bool
 evalGameStatus grid = evalGameStatus' $ checkGameStatus grid
   where
-    evalGameStatus' Won = showVictory
-    evalGameStatus' Lost = showDefeat
-    evalGameStatus' Running = return ()
+    evalGameStatus' Won = do showVictory; return True
+    evalGameStatus' Lost = do showDefeat; return True
+    evalGameStatus' Running = return False
 
 showVictory :: IO ()
 showVictory =
@@ -86,7 +105,7 @@ showVictory =
     putStr colorPositive
     putStrLn msgVictory
     putStr colorReset
-    exitSuccess
+    waitForEnter returnToHome
 
 showDefeat :: IO ()
 showDefeat =
@@ -94,4 +113,11 @@ showDefeat =
     putStr colorNegative
     putStrLn msgDefeat
     putStr colorNegative
-    exitSuccess
+    waitForEnter returnToHome
+
+waitForEnter :: String -> IO ()
+waitForEnter prompt =
+  do
+    putStr prompt
+    _ <- getLine
+    return ()
