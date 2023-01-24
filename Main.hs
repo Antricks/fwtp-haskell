@@ -67,6 +67,7 @@ mainServe =
     gameLoopNetwork conn defaultGrid
 
 mainConnect :: String -> Maybe PortNumber -> IO ()
+mainConnect "" port = mainConnect "127.0.0.1" port
 mainConnect host Nothing = mainConnect host (Just defaultPortFwtp)
 mainConnect host (Just port) =
   do
@@ -107,7 +108,7 @@ main =
       Just 1 -> mainLocal
       Just 2 ->
         do --TODO maybe make this a bit more resistent to malformed input
-          putStr "Please enter the IPv4 address of the host you want to connect to: "
+          putStr ("Please enter the IPv4 address of the host you want to connect to [leave empty for " ++ defaultHostFwtp ++ "]: ")
           host <- getLine
 
           putStr ("Please enter the port you want to use [leave empty for " ++ show defaultPortFwtp ++ "]: ")

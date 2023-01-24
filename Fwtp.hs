@@ -11,6 +11,9 @@ import Network.Socket.ByteString (recv, send)
 import UserInterface (getTurn)
 import Utils
 
+defaultHostFwtp :: String
+defaultHostFwtp = "127.0.0.1"
+
 defaultPortFwtp :: PortNumber
 defaultPortFwtp = 4444
 
