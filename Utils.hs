@@ -17,7 +17,12 @@ getFieldsDelimitedBy delimiter = getFieldsDelimitedBy' []
   where
     getFieldsDelimitedBy' :: [String] -> String -> [String]
     getFieldsDelimitedBy' buf "" = buf
-    getFieldsDelimitedBy' buf input = getFieldsDelimitedBy' ((takeWhile (/= delimiter) input) : buf) (tail (dropWhile (/= delimiter) input))
+    getFieldsDelimitedBy' buf input = getFieldsDelimitedBy' ((takeWhile (/= delimiter) input) : buf) (clean (dropWhile (/= delimiter) input))
+      where
+        clean str@(c:cs)
+          | c == delimiter = cs
+          | otherwise = str
+        clean "" = "" 
 
 ip4StringToTuple :: String -> (Word8, Word8, Word8, Word8)
 ip4StringToTuple addr = (parseAddrPart addr 0, parseAddrPart addr 1, parseAddrPart addr 2, parseAddrPart addr 3)

@@ -31,6 +31,8 @@ type Version = Int
 
 type VersionList = [Version]
 
+data FwtpConnection = FwtpConnection Version Socket
+
 data FwtpPacket = FwtpHandshakeInitPacket VersionList | FwtpHandshakeAckPacket Version | FwtpErrorPacket FwtpErrorCode FwtpErrorMsg | FwtpTurnPacket XIndex | FwtpInvaildPacket (Maybe String) deriving (Eq, Show)
 
 data FtwpPacketType = FwtpHandshakeInit | FwtpHandshakeAck | FwtpError | FwtpTurn | FwtpInvaild deriving (Eq, Show)
@@ -57,8 +59,8 @@ fwtpPacketOfType (FwtpTurnPacket _) FwtpTurn = True
 fwtpPacketOfType (FwtpInvaildPacket _) FwtpInvaild = True
 fwtpPacketOfType _ _ = False
 
-unpackPacket :: ByteString -> FwtpPacket
-unpackPacket raw
+unpackPacket :: Version -> ByteString -> FwtpPacket
+unpackPacket 1 raw
   | packetType == FwtpHandshakeInit = let versionList = map read (getFieldsDelimitedBy defaultListDelimiter (getPacketField 1)) in FwtpHandshakeInitPacket versionList
   | packetType == FwtpHandshakeAck = FwtpHandshakeAckPacket (read $ getPacketField 1)
   | packetType == FwtpError = FwtpErrorPacket (read $ getPacketField 1) (getPacketField 2)
@@ -69,61 +71,100 @@ unpackPacket raw
     getPacketField = getFieldDelimitedBy defaultPacketFieldDelimiter rawString
     Just packetType = fwtpPacketType $ read $ getPacketField 0
 
-receiveNext :: Socket -> FtwpPacketType -> IO [FwtpPacket]
-receiveNext sock packetType = receiveNext' ([] :: [FwtpPacket])
+receiveNext :: FwtpConnection -> IO FwtpPacket
+receiveNext conn@(FwtpConnection 1 sock) =
+  do
+    raw <- recv sock 1024
+    let packet = unpackPacket 1 raw
+    return packet
+
+receiveUntilNext :: FwtpConnection -> FtwpPacketType -> IO [FwtpPacket]
+receiveUntilNext conn@(FwtpConnection 1 sock) packetType = receiveUntilNext' ([] :: [FwtpPacket])
   where
-    receiveNext' :: [FwtpPacket] -> IO [FwtpPacket]
-    receiveNext' packets =
+    receiveUntilNext' :: [FwtpPacket] -> IO [FwtpPacket]
+    receiveUntilNext' packets =
       do
-        raw <- recv sock 1024
-        let packet = unpackPacket raw
+        packet <- receiveNext conn
 
         if fwtpPacketOfType packet packetType
           then return (packet : packets)
-          else receiveNext' (packet : packets)
+          else receiveUntilNext' (packet : packets)
 
-getOpponentTurn :: Socket -> IO (Int, [FwtpPacket])
-getOpponentTurn sock =
+getOpponentTurn :: FwtpConnection -> IO (Int, [FwtpPacket])
+getOpponentTurn conn =
   do
-    turnPacket@(FwtpTurnPacket x) : packets <- receiveNext sock FwtpTurn
+    turnPacket@(FwtpTurnPacket x) : packets <- receiveUntilNext conn FwtpTurn
     return (x, packets)
 
-sendTurn :: Socket -> Int -> IO ()
-sendTurn sock x =
+sendTurn :: FwtpConnection -> Int -> IO ()
+sendTurn conn@(FwtpConnection 1 sock) x =
   do
     _ <- send sock (encodeUtf8 (pack (show (fwtpPacketCode FwtpTurn) ++ defaultPacketFieldDelimiter : show x ++ "\n")))
     return ()
 
-serveFwtp :: IO Socket
+incomingHandshake :: Socket -> IO (Maybe Version)
+incomingHandshake sock =
+  do
+    res@(FwtpHandshakeInitPacket verList) : packets <- receiveUntilNext (FwtpConnection fwtpVersion sock) FwtpHandshakeInit
+
+    let matchingVersion
+          | fwtpVersion `elem` verList = Just fwtpVersion
+          | otherwise = Nothing
+
+    _ <- send sock (encodeUtf8 (pack (show (fwtpPacketCode FwtpHandshakeAck) ++ defaultPacketFieldDelimiter : show fwtpVersion ++ "\n")))
+
+    return matchingVersion
+
+outgoingHandshake :: Socket -> IO (Maybe Version)
+outgoingHandshake sock =
+  do
+    _ <- send sock (encodeUtf8 (pack (show (fwtpPacketCode FwtpHandshakeInit) ++ defaultPacketFieldDelimiter : show fwtpVersion ++ "\n")))
+
+    res@(FwtpHandshakeAckPacket matchingVer) : packets <- receiveUntilNext (FwtpConnection fwtpVersion sock) FwtpHandshakeAck
+
+    return (Just matchingVer)
+
+serveFwtp :: IO (Maybe FwtpConnection)
 serveFwtp =
   withSocketsDo $ do
     let hints = defaultHints {addrFlags = [AI_NUMERICHOST], addrSocketType = Stream}
     addr : _ <- getAddrInfo (Just hints) (Just "0.0.0.0") (Just (show defaultPortFwtp))
-    sock <- openSocket addr
+    listenSock <- openSocket addr
 
-    Network.Socket.bind sock (addrAddress addr)
-    Network.Socket.listen sock 1
+    setSocketOption listenSock ReuseAddr 1
 
-    (conn, addr) <- accept sock
+    Network.Socket.bind listenSock (addrAddress addr)
+    Network.Socket.listen listenSock 1
 
-    return conn
+    (sock, addr) <- accept listenSock
 
-connectFwtp :: String -> PortNumber -> IO Socket
+    matchingVersion <- incomingHandshake sock
+
+    case matchingVersion of
+      Just ver -> return $ Just $ FwtpConnection ver sock
+      Nothing -> return Nothing
+
+connectFwtp :: String -> PortNumber -> IO (Maybe FwtpConnection)
 connectFwtp host port =
   withSocketsDo $ do
     sock <- socket AF_INET Stream defaultProtocol
     connect sock (SockAddrInet port (ip4StringToHostAddress host))
 
-    return sock
+    matchingVersion <- outgoingHandshake sock
+
+    case matchingVersion of
+      Just ver -> return $ Just $ FwtpConnection ver sock
+      Nothing -> return Nothing
 
 -- NOTICE: Just for testing
 debugServe :: IO ()
 debugServe =
   do
-    sock <- serveFwtp
-    debugServe' sock
+    Just conn <- serveFwtp
+    debugServe' conn
   where
-    debugServe' sock =
+    debugServe' :: FwtpConnection -> IO ()
+    debugServe' conn@(FwtpConnection 1 sock) =
       do
         raw <- recv sock 1024
 
@@ -131,6 +172,6 @@ debugServe =
         B.putStr raw
 
         putStr "Unpacked: "
-        print $ unpackPacket raw
+        print $ unpackPacket 1 raw
 
-        debugServe' sock
+        debugServe' conn

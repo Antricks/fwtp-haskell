@@ -2,15 +2,16 @@ module Main where
 
 import Fwtp
 import Game
-import Network.Socket
+
 import UserInterface
 import Text.Read (readMaybe)
 import Control.Monad (when)
+import Network.Socket (PortNumber)
 
-handlePacket :: Socket -> FwtpPacket -> IO ()
-handlePacket sock (FwtpHandshakeInitPacket verList) = undefined -- TODO (oder vielleicht auch einfach nicht?)
-handlePacket sock (FwtpHandshakeAckPacket ver) = undefined -- TODO (oder vielleicht auch einfach nicht?)
-handlePacket sock (FwtpErrorPacket code msg) = undefined -- TODO: Fehler Anzeigen
+handlePacket :: FwtpConnection -> FwtpPacket -> IO ()
+handlePacket conn@(FwtpConnection 1 sock) (FwtpHandshakeInitPacket verList) = undefined -- TODO (oder vielleicht auch einfach nicht?)
+handlePacket conn@(FwtpConnection 1 sock) (FwtpHandshakeAckPacket ver) = undefined -- TODO (oder vielleicht auch einfach nicht?)
+handlePacket conn@(FwtpConnection 1 sock) (FwtpErrorPacket code msg) = undefined -- TODO: Fehler Anzeigen
 
 gameLoopLocal :: Grid -> IO ()
 gameLoopLocal grid@(Grid height cols) =
@@ -35,8 +36,8 @@ gameLoopLocal grid@(Grid height cols) =
   where
     width = length cols
 
-gameLoopNetwork :: Socket -> Grid -> IO ()
-gameLoopNetwork sock grid@(Grid height cols) =
+gameLoopNetwork :: FwtpConnection -> Grid -> IO ()
+gameLoopNetwork conn@(FwtpConnection 1 sock) grid@(Grid height cols) =
   do
     clearScreen
     showGrid grid
@@ -44,44 +45,49 @@ gameLoopNetwork sock grid@(Grid height cols) =
     when gameEnded main
 
     ownTurn <- getTurn width
-    sendTurn sock ownTurn
+    sendTurn conn ownTurn
     let Just ownResult = insertChip grid ownTurn Self -- TODO: Nothing abfangen
     clearScreen
     showGrid ownResult
     gameEnded <- evalGameStatus ownResult
     when gameEnded main
 
-    (oppTurn, otherPackets) <- getOpponentTurn sock
+    (oppTurn, otherPackets) <- getOpponentTurn conn
     print otherPackets
 
     let Just oppResult = insertChip ownResult oppTurn Opponent -- TODO: Nothing abfangen
-    gameLoopNetwork sock oppResult
+    gameLoopNetwork conn oppResult
   where
     width = length cols
 
 mainServe :: IO ()
 mainServe =
   do
-    sock <- serveFwtp
-    gameLoopNetwork sock defaultGrid
+    Just conn <- serveFwtp --TODO Nothing abfangen
+    gameLoopNetwork conn defaultGrid
 
 mainConnect :: String -> Maybe PortNumber -> IO ()
 mainConnect host Nothing = mainConnect host (Just defaultPortFwtp)
 mainConnect host (Just port) =
   do
-    sock <- connectFwtp host port
+    conn <- connectFwtp host port
 
-    let grid = defaultGrid
+    case conn of
+      Just conn ->
+        do
+          let grid = defaultGrid
 
-    clearScreen
-    showGrid grid
-    evalGameStatus grid
+          clearScreen
+          showGrid grid
+          evalGameStatus grid
 
-    (oppTurn, otherPackets) <- getOpponentTurn sock
-    print otherPackets
+          (oppTurn, otherPackets) <- getOpponentTurn conn
+          print otherPackets
 
-    let Just oppResult = insertChip grid oppTurn Opponent -- TODO: Nothing abfangen
-    gameLoopNetwork sock oppResult
+          let Just oppResult = insertChip grid oppTurn Opponent -- TODO: Nothing abfangen
+          gameLoopNetwork conn oppResult
+      Nothing ->
+        return () --TODO Fehlermeldung
 
 mainLocal :: IO ()
 mainLocal = gameLoopLocal defaultGrid

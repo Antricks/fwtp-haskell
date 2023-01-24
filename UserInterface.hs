@@ -1,15 +1,16 @@
 module UserInterface where
 
+import Data.List (intercalate, intersperse)
 import Game
 import System.Exit
 import Text.Read (readMaybe)
 
 welcomeBanner =
-  colorEmphasis ++
-  "             - 𝐂𝐎𝐍𝐍𝐄𝐂𝐓 𝐅𝐎𝐔𝐑 -        \n\
-  \        powered by FWTP and Haskell\n\
-  \© Antricks 2023 https://github.com/Antricks\n\n"
-  ++ colorReset
+  colorEmphasis
+    ++ "             - 𝐂𝐎𝐍𝐍𝐄𝐂𝐓 𝐅𝐎𝐔𝐑 -        \n\
+       \        powered by FWTP and Haskell\n\
+       \© Antricks 2023 https://github.com/Antricks\n\n"
+    ++ colorReset
 
 methodMenu =
   "Choose your method of playing:\n\
@@ -36,29 +37,33 @@ colorNegative = "\ESC[91m"
 
 colorReset = "\ESC[0m"
 
-symbolChip = "⬤"
+symbolChip = '⬤'
 
-symbolHint = "⚠"
+symbolHint = '⚠'
 
-symbolWarning = "⚠"
+symbolWarning = '⚠'
 
-gridEdgeTopLeft = "┏"
+gridEdgeTopLeft = '┏'
 
-gridEdgeTopRight = "┓"
+gridEdgeTopRight = '┓'
 
-gridEdgeBotLeft = "┗"
+gridEdgeBotLeft = '┗'
 
-gridEdgeBotRight = "┛"
+gridEdgeBotRight = '┛'
 
-gridHorizontal = "━"
+gridHorizontal = '━'
 
-gridVertical = "┃"
+gridVertical = '┃'
 
-gridCross = "╋"
+gridCross = '╋'
 
-gridCrossTop = "┳"
+gridCrossTop = '┳'
 
-gridCrossBot = "┻"
+gridCrossBot = '┻'
+
+gridCrossLeft = '┣'
+
+gridCrossRight = '┫'
 
 msgVictory = "𝐂𝐎𝐍𝐆𝐑𝐀𝐓𝐒 - 𝐘𝐎𝐔 𝐖𝐎𝐍!                   "
 
@@ -68,8 +73,8 @@ clearScreen :: IO ()
 clearScreen = putStr "\ESC[H\ESC[2J"
 
 indicatePlayer :: Player -> IO ()
-indicatePlayer Self = putStr (colorOwn ++ "[" ++ symbolChip ++ "] ")
-indicatePlayer Opponent = putStr (colorOpp ++ "[" ++ symbolChip ++ "] ")
+indicatePlayer Self = putStr (colorOwn ++ "[" ++ symbolChip : "] ")
+indicatePlayer Opponent = putStr (colorOpp ++ "[" ++ symbolChip : "] ")
 
 getTurn :: Width -> IO Int
 getTurn width =
@@ -89,8 +94,26 @@ getTurn width =
 showGrid :: Grid -> IO ()
 showGrid grid@(Grid height cols) =
   do
-    putStr colorReset
-    print grid -- TODO schöne ausgabe
+    putStr topBorder
+    putStr $ concat [row (height-y) ++ horizontalBorder | y <- [1 .. height]]
+
+    putStr numberRow
+  where
+    width = length cols
+
+    topBorder = colorGridBorder ++ gridEdgeTopLeft : intercalate (gridCrossTop : "") (replicate width (replicate 3 gridHorizontal)) ++ gridEdgeTopRight : "\n"
+    horizontalBorder = gridCrossLeft : intercalate (gridCross : "") (replicate width (replicate 3 gridHorizontal)) ++ gridCrossRight : "\n"
+
+    row y = colorGridBorder ++ concat [gridVertical : ' ' : symbol x y ++ " " | x <- [0 .. width - 1]] ++ gridVertical : "\n"
+
+    numberRow = colorEmphasis ++ concat [numberCell n | n <- [1 .. width]] ++ "\n" ++ colorReset
+    numberCell n = "  " ++ show n ++ " "
+
+    symbol :: XIndex -> YIndex -> String
+    symbol x y -- TODO Hints
+      | getChipAt grid x y == Just (Chip Self) = colorOwn ++ symbolChip : colorGridBorder
+      | getChipAt grid x y == Just (Chip Opponent) = colorOpp ++ symbolChip : colorGridBorder
+      | otherwise = " "
 
 evalGameStatus :: Grid -> IO Bool
 evalGameStatus grid = evalGameStatus' $ checkGameStatus grid
@@ -112,7 +135,7 @@ showDefeat =
   do
     putStr colorNegative
     putStrLn msgDefeat
-    putStr colorNegative
+    putStr colorReset
     waitForEnter returnToHome
 
 waitForEnter :: String -> IO ()
