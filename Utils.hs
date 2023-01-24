@@ -5,6 +5,10 @@ import Network.Socket
 
 type Delimiter = Char
 
+execAll :: [IO ()] -> IO ()
+execAll [] = return ()
+execAll (a:as) = do execAll as; a
+
 getFieldDelimitedBy :: Delimiter -> String -> Int -> String
 getFieldDelimitedBy delimiter input index = getFieldDelimitedBy' index input
   where

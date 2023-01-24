@@ -7,11 +7,10 @@ import UserInterface
 import Text.Read (readMaybe)
 import Control.Monad (when)
 import Network.Socket (PortNumber)
+import Utils (execAll)
 
-handlePacket :: FwtpConnection -> FwtpPacket -> IO ()
-handlePacket conn@(FwtpConnection 1 sock) (FwtpHandshakeInitPacket verList) = undefined -- TODO (oder vielleicht auch einfach nicht?)
-handlePacket conn@(FwtpConnection 1 sock) (FwtpHandshakeAckPacket ver) = undefined -- TODO (oder vielleicht auch einfach nicht?)
-handlePacket conn@(FwtpConnection 1 sock) (FwtpErrorPacket code msg) = undefined -- TODO: Fehler Anzeigen
+handlePacket :: FwtpConnection -> FwtpPacket -> IO () -- NOTICE: This is non-exhaustive. Should I add anything except errors here though?
+handlePacket conn@(FwtpConnection 1 sock) (FwtpErrorPacket code msg) = showError code msg
 
 gameLoopLocal :: Grid -> IO ()
 gameLoopLocal grid@(Grid height cols) =
@@ -23,7 +22,7 @@ gameLoopLocal grid@(Grid height cols) =
 
     indicatePlayer Self
     ownTurn <- getTurn width
-    let Just ownResult = insertChip grid ownTurn Self -- TODO: Nothing abfangen
+    let Just ownResult = insertChip grid ownTurn Self -- TODO: handle Nothing
     clearScreen
     showGrid ownResult
     gameEnded <- evalGameStatus ownResult
@@ -31,7 +30,7 @@ gameLoopLocal grid@(Grid height cols) =
 
     indicatePlayer Opponent
     oppTurn <- getTurn width
-    let Just oppResult = insertChip ownResult oppTurn Opponent -- TODO: Nothing abfangen
+    let Just oppResult = insertChip ownResult oppTurn Opponent -- TODO: handle Nothing
     gameLoopLocal oppResult
   where
     width = length cols
@@ -46,16 +45,18 @@ gameLoopNetwork conn@(FwtpConnection 1 sock) grid@(Grid height cols) =
 
     ownTurn <- getTurn width
     sendTurn conn ownTurn
-    let Just ownResult = insertChip grid ownTurn Self -- TODO: Nothing abfangen
+    let Just ownResult = insertChip grid ownTurn Self -- TODO: handle Nothing
     clearScreen
     showGrid ownResult
     gameEnded <- evalGameStatus ownResult
     when gameEnded main
 
     (oppTurn, otherPackets) <- getOpponentTurn conn
-    print otherPackets
+    let actions = map (handlePacket conn) otherPackets
 
-    let Just oppResult = insertChip ownResult oppTurn Opponent -- TODO: Nothing abfangen
+    execAll actions --TODO: FIXME this evaluates only after opponent submitted a turn. Until then, errors are not displayed.
+
+    let Just oppResult = insertChip ownResult oppTurn Opponent -- TODO: handle Nothing
     gameLoopNetwork conn oppResult
   where
     width = length cols
@@ -63,7 +64,7 @@ gameLoopNetwork conn@(FwtpConnection 1 sock) grid@(Grid height cols) =
 mainServe :: IO ()
 mainServe =
   do
-    Just conn <- serveFwtp --TODO Nothing abfangen
+    Just conn <- serveFwtp --TODO handle Nothing
     gameLoopNetwork conn defaultGrid
 
 mainConnect :: String -> Maybe PortNumber -> IO ()
@@ -85,10 +86,10 @@ mainConnect host (Just port) =
           (oppTurn, otherPackets) <- getOpponentTurn conn
           print otherPackets
 
-          let Just oppResult = insertChip grid oppTurn Opponent -- TODO: Nothing abfangen
+          let Just oppResult = insertChip grid oppTurn Opponent -- TODO: handle Nothing
           gameLoopNetwork conn oppResult
       Nothing ->
-        return () --TODO Fehlermeldung
+        showError 101 "No matching FWTP version found. The clients are incompatible."
 
 mainLocal :: IO ()
 mainLocal = gameLoopLocal defaultGrid

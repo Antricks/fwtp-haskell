@@ -2,6 +2,7 @@ module UserInterface where
 
 import Data.List (intercalate, intersperse)
 import Game
+import Hints
 import System.Exit
 import Text.Read (readMaybe)
 
@@ -73,8 +74,8 @@ clearScreen :: IO ()
 clearScreen = putStr "\ESC[H\ESC[2J"
 
 indicatePlayer :: Player -> IO ()
-indicatePlayer Self = putStr (colorOwn ++ "[" ++ symbolChip : "] ")
-indicatePlayer Opponent = putStr (colorOpp ++ "[" ++ symbolChip : "] ")
+indicatePlayer Self = putStr $ colorOwn ++ "[" ++ symbolChip : "] "
+indicatePlayer Opponent = putStr $ colorOpp ++ "[" ++ symbolChip : "] "
 
 getTurn :: Width -> IO Int
 getTurn width =
@@ -95,9 +96,11 @@ showGrid :: Grid -> IO ()
 showGrid grid@(Grid height cols) =
   do
     putStr topBorder
-    putStr $ concat [row (height-y) ++ horizontalBorder | y <- [1 .. height]]
+    putStr $ concat [row (height - y) ++ horizontalBorder | y <- [1 .. height]]
 
     putStr numberRow
+
+    print $ getHints grid
   where
     width = length cols
 
@@ -113,6 +116,8 @@ showGrid grid@(Grid height cols) =
     symbol x y -- TODO Hints
       | getChipAt grid x y == Just (Chip Self) = colorOwn ++ symbolChip : colorGridBorder
       | getChipAt grid x y == Just (Chip Opponent) = colorOpp ++ symbolChip : colorGridBorder
+      | getHints grid !! x !! y == CouldEndGame Self = colorOwn ++ symbolHint : colorGridBorder
+      | getHints grid !! x !! y == CouldEndGame Opponent = colorOpp ++ symbolWarning : colorGridBorder
       | otherwise = " "
 
 evalGameStatus :: Grid -> IO Bool
@@ -121,6 +126,12 @@ evalGameStatus grid = evalGameStatus' $ checkGameStatus grid
     evalGameStatus' Won = do showVictory; return True
     evalGameStatus' Lost = do showDefeat; return True
     evalGameStatus' Running = return False
+
+showError :: Int -> String -> IO ()
+showError code msg =
+  do
+    putStrLn $ colorError ++ "[ERR] (" ++ show code ++ "): " ++ msg ++ colorReset
+    waitForEnter "Press [Enter] to continue..."
 
 showVictory :: IO ()
 showVictory =
