@@ -29,8 +29,7 @@ getHints grid@(Grid height cols) = [[hint x y | y <- [0 .. height - 1]] | x <- [
                 && ( let neighbourCount = rowCount grid !! (x + a) !! (y + b) !! (3 * (1 + a) + (1 + b))
                       in (neighbourCount == 2)
                       || ( let invNeighborCount = rowCount grid !! (x - a) !! (y - b) !! (3 * (1 - a) + (1 - b))
-                               inbetween = invNeighborIsPlayers && neighbourIsPlayers && neighbourCount + invNeighborCount >= 1 
-                            in inbetween
+                            in invNeighborIsPlayers && neighbourIsPlayers && neighbourCount + invNeighborCount >= 1
                          )
                    )
               where
