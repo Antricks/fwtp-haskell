@@ -81,7 +81,7 @@ receiveNext conn@(FwtpConnection 1 sock) =
     let packet = unpackPacket 1 raw
     return packet
 
-receiveUntilNext :: FwtpConnection -> FtwpPacketType -> IO [FwtpPacket]
+receiveUntilNext :: FwtpConnection -> FtwpPacketType -> IO [FwtpPacket] -- NOTICE: This function has the problem that other packets sent before are only handled after the expected type was matched once.
 receiveUntilNext conn@(FwtpConnection 1 sock) packetType = receiveUntilNext' ([] :: [FwtpPacket])
   where
     receiveUntilNext' :: [FwtpPacket] -> IO [FwtpPacket]
@@ -99,6 +99,12 @@ getOpponentTurn conn =
     turnPacket@(FwtpTurnPacket x) : packets <- receiveUntilNext conn FwtpTurn
     return (x, packets)
 
+sendErr :: Socket -> FwtpErrorCode -> FwtpErrorMsg -> IO ()
+sendErr sock errCode errMsg =
+  do
+    _ <- send sock (encodeUtf8 (pack (show (fwtpPacketCode FwtpError) ++ defaultPacketFieldDelimiter : show errCode ++ defaultPacketFieldDelimiter : errMsg)))
+    return ()
+
 sendTurn :: FwtpConnection -> Int -> IO ()
 sendTurn conn@(FwtpConnection 1 sock) x =
   do
@@ -108,15 +114,20 @@ sendTurn conn@(FwtpConnection 1 sock) x =
 incomingHandshake :: Socket -> IO (Maybe Version)
 incomingHandshake sock =
   do
-    res@(FwtpHandshakeInitPacket verList) : packets <- receiveUntilNext (FwtpConnection fwtpVersion sock) FwtpHandshakeInit
-
+    res@(FwtpHandshakeInitPacket verList) : packets <- receiveUntilNext (FwtpConnection fwtpVersion sock) FwtpHandshakeInit -- TODO handle incoming Error instead of ack
     let matchingVersion
           | fwtpVersion `elem` verList = Just fwtpVersion
           | otherwise = Nothing
 
-    _ <- send sock (encodeUtf8 (pack (show (fwtpPacketCode FwtpHandshakeAck) ++ defaultPacketFieldDelimiter : show fwtpVersion ++ "\n")))
-
-    return matchingVersion
+    case matchingVersion of
+      Just ver ->
+        do
+          _ <- send sock (encodeUtf8 (pack (show (fwtpPacketCode FwtpHandshakeAck) ++ defaultPacketFieldDelimiter : show fwtpVersion ++ "\n")))
+          return matchingVersion
+      Nothing ->
+        do
+          sendErr sock 1 "No Matching Version"
+          return Nothing
 
 outgoingHandshake :: Socket -> IO (Maybe Version)
 outgoingHandshake sock =
@@ -125,7 +136,11 @@ outgoingHandshake sock =
 
     res@(FwtpHandshakeAckPacket matchingVer) : packets <- receiveUntilNext (FwtpConnection fwtpVersion sock) FwtpHandshakeAck
 
-    return (Just matchingVer)
+    if matchingVer == fwtpVersion
+      then return (Just matchingVer)
+      else do
+        sendErr sock 1 "No Matching Version"
+        return Nothing
 
 serveFwtp :: IO (Maybe FwtpConnection)
 serveFwtp =
@@ -141,7 +156,9 @@ serveFwtp =
 
     (sock, addr) <- accept listenSock
 
-    matchingVersion <- incomingHandshake sock
+    matchingVersion <- outgoingHandshake sock
+
+    print matchingVersion
 
     case matchingVersion of
       Just ver -> return $ Just $ FwtpConnection ver sock
@@ -153,7 +170,9 @@ connectFwtp host port =
     sock <- socket AF_INET Stream defaultProtocol
     connect sock (SockAddrInet port (ip4StringToHostAddress host))
 
-    matchingVersion <- outgoingHandshake sock
+    matchingVersion <- incomingHandshake sock
+
+    print matchingVersion
 
     case matchingVersion of
       Just ver -> return $ Just $ FwtpConnection ver sock

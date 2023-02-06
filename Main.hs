@@ -1,12 +1,11 @@
 module Main where
 
+import Control.Monad (when)
 import Fwtp
 import Game
-
-import UserInterface
-import Text.Read (readMaybe)
-import Control.Monad (when)
 import Network.Socket (PortNumber)
+import Text.Read (readMaybe)
+import UserInterface
 import Utils (execAll)
 
 handlePacket :: FwtpConnection -> FwtpPacket -> IO () -- NOTICE: This is non-exhaustive. Should I add anything except errors here though?
@@ -54,8 +53,7 @@ gameLoopNetwork conn@(FwtpConnection 1 sock) grid@(Grid height cols) =
     (oppTurn, otherPackets) <- getOpponentTurn conn
     let actions = map (handlePacket conn) otherPackets
 
-    execAll actions --TODO: FIXME this evaluates only after opponent submitted a turn. Until then, errors are not displayed.
-
+    execAll actions -- TODO: FIXME this evaluates only after opponent submitted a turn. Until then, errors are not displayed.
     let Just oppResult = insertChip ownResult oppTurn Opponent -- TODO: handle Nothing
     gameLoopNetwork conn oppResult
   where
@@ -64,8 +62,15 @@ gameLoopNetwork conn@(FwtpConnection 1 sock) grid@(Grid height cols) =
 mainServe :: IO ()
 mainServe =
   do
-    Just conn <- serveFwtp --TODO handle Nothing
-    gameLoopNetwork conn defaultGrid
+    putStrLn (colorEmphasis ++ "\n[INFO] Waiting for connection..." ++ colorReset)
+    conn <- serveFwtp
+
+    case conn of
+      Just c -> gameLoopNetwork c defaultGrid
+      Nothing ->
+        do
+          showError 101 "No matching FWTP version found. The clients are incompatible."
+          main
 
 mainConnect :: String -> Maybe PortNumber -> IO ()
 mainConnect "" port = mainConnect "127.0.0.1" port
@@ -89,7 +94,9 @@ mainConnect host (Just port) =
           let Just oppResult = insertChip grid oppTurn Opponent -- TODO: handle Nothing
           gameLoopNetwork conn oppResult
       Nothing ->
-        showError 101 "No matching FWTP version found. The clients are incompatible."
+        do
+          showError 101 "No matching FWTP version found. The clients are incompatible."
+          main
 
 mainLocal :: IO ()
 mainLocal = gameLoopLocal defaultGrid
@@ -99,7 +106,7 @@ main =
   do
     clearScreen
     putStrLn welcomeBanner
-    
+
     putStr methodMenu
     choiceRaw <- getLine
 
@@ -108,7 +115,8 @@ main =
     case choice of
       Just 1 -> mainLocal
       Just 2 ->
-        do --TODO maybe make this a bit more resistent to malformed input
+        do
+          -- TODO maybe make this a bit more resistent to malformed input
           putStr ("Please enter the IPv4 address of the host you want to connect to [leave empty for " ++ defaultHostFwtp ++ "]: ")
           host <- getLine
 
@@ -121,4 +129,3 @@ main =
       Just 3 -> mainServe
       Just _ -> main
       Nothing -> main
-            
